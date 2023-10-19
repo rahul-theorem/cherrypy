@@ -17,8 +17,6 @@ from email.header import decode_header
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import unquote_plus
 
-import jaraco.collections
-
 import cherrypy
 from cherrypy._cpcompat import ntob, ntou
 
@@ -387,11 +385,10 @@ def parse_query_string(query_string, keep_blank_values=True, encoding='utf-8'):
     return pm
 
 
-class CaseInsensitiveDict(jaraco.collections.KeyTransformingDict):
-
-    """A case-insensitive dict subclass.
-
-    Each key is changed on entry to title case.
+class CaseInsensitiveDict(dict):
+    """
+    A dict subclass that transforms the keys before they're used.
+    Subclasses may override the default transform_key to customize behavior.
     """
 
     @staticmethod
@@ -401,19 +398,51 @@ class CaseInsensitiveDict(jaraco.collections.KeyTransformingDict):
             return 'None'
         return key.title()
 
+    def __init__(self, *args, **kargs):
+        super(dict, self).__init__()
+        # build a dictionary using the default constructs
+        d = dict(*args, **kargs)
+        # build this dictionary using transformed keys.
+        for item in d.items():
+            self.__setitem__(*item)
 
-#   TEXT = <any OCTET except CTLs, but including LWS>
-#
-# A CRLF is allowed in the definition of TEXT only as part of a header
-# field continuation. It is expected that the folding LWS will be
-# replaced with a single SP before interpretation of the TEXT value."
-if str == bytes:
-    header_translate_table = ''.join([chr(i) for i in range(256)])
-    header_translate_deletechars = ''.join(
-        [chr(i) for i in range(32)]) + chr(127)
-else:
-    header_translate_table = None
-    header_translate_deletechars = bytes(range(32)) + bytes([127])
+    def __setitem__(self, key, val):
+        key = self.transform_key(key)
+        self.__setitem__(key, val)
+
+    def __getitem__(self, key):
+        key = self.transform_key(key)
+        return self.__getitem__(key)
+
+    def __contains__(self, key):
+        key = self.transform_key(key)
+        return self.__contains__(key)
+
+    def __delitem__(self, key):
+        key = self.transform_key(key)
+        return self.__delitem__(key)
+
+    def get(self, key, *args, **kwargs):
+        key = self.transform_key(key)
+        return self.get(key, *args, **kwargs)
+
+    def setdefault(self, key, *args, **kwargs):
+        key = self.transform_key(key)
+        return self.setdefault(key, *args, **kwargs)
+
+    def pop(self, key, *args, **kwargs):
+        key = self.transform_key(key)
+        return self.pop(key, *args, **kwargs)
+
+    def matching_key_for(self, key):
+        """
+        Given a key, return the actual key stored in self that matches.
+        Raise KeyError if the key isn't found.
+        """
+        try:
+            return next(e_key for e_key in self.keys() if e_key == key)
+        except StopIteration:
+            raise KeyError(key)
 
 
 class HeaderMap(CaseInsensitiveDict):
